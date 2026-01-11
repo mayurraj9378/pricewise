@@ -2,11 +2,25 @@
 const nextConfig = {
   experimental: {
     serverActions: true,
-    serverComponentsExternalPackages: ['mongoose']
+    serverComponentsExternalPackages: ['puppeteer'],
   },
-  images: {
-    domains: ['m.media-amazon.com']
-  }
-}
 
-module.exports = nextConfig
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'm.media-amazon.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images-na.ssl-images-amazon.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.amazon.com',
+      },
+    ],
+  },
+};
+
+module.exports = nextConfig;

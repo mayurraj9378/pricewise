@@ -1,85 +1,80 @@
-"use server"
-
-import axios from 'axios';
-import * as cheerio from 'cheerio';
-import { extractCurrency, extractDescription, extractPrice } from '../utils';
+import puppeteer from 'puppeteer';
 
 export async function scrapeAmazonProduct(url: string) {
-  if(!url) return;
+  if (!url) return null;
 
-  // BrightData proxy configuration
-  const username = String(process.env.BRIGHT_DATA_USERNAME);
-  const password = String(process.env.BRIGHT_DATA_PASSWORD);
-  const port = 22225;
-  const session_id = (1000000 * Math.random()) | 0;
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  });
 
-  const options = {
-    auth: {
-      username: `${username}-session-${session_id}`,
-      password,
-    },
-    host: 'brd.superproxy.io',
-    port,
-    rejectUnauthorized: false,
-  }
+  const page = await browser.newPage();
 
-  try {
-    // Fetch the product page
-    const response = await axios.get(url, options);
-    const $ = cheerio.load(response.data);
+  await page.setUserAgent(
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
+  );
 
-    // Extract the product title
-    const title = $('#productTitle').text().trim();
-    const currentPrice = extractPrice(
-      $('.priceToPay span.a-price-whole'),
-      $('.a.size.base.a-color-price'),
-      $('.a-button-selected .a-color-base'),
-    );
+  await page.setExtraHTTPHeaders({
+    'Accept-Language': 'en-IN,en;q=0.9',
+  });
 
-    const originalPrice = extractPrice(
-      $('#priceblock_ourprice'),
-      $('.a-price.a-text-price span.a-offscreen'),
-      $('#listPrice'),
-      $('#priceblock_dealprice'),
-      $('.a-size-base.a-color-price')
-    );
+  console.log('Opening Amazon page...');
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+  console.log('Amazon page loaded');
 
-    const outOfStock = $('#availability span').text().trim().toLowerCase() === 'currently unavailable';
+  const data = await page.evaluate(() => {
+    const getText = (sel: string) =>
+      document.querySelector(sel)?.textContent?.trim() || null;
 
-    const images = 
-      $('#imgBlkFront').attr('data-a-dynamic-image') || 
-      $('#landingImage').attr('data-a-dynamic-image') ||
-      '{}'
+    const getImage = () => {
+      const img =
+        (document.querySelector('#landingImage') as HTMLImageElement)?.src ||
+        (document.querySelector('#imgBlkFront') as HTMLImageElement)?.src ||
+        (document.querySelector('img[data-old-hires]') as HTMLImageElement)?.getAttribute('data-old-hires') ||
+        (document.querySelector('img') as HTMLImageElement)?.src ||
+        null;
 
-    const imageUrls = Object.keys(JSON.parse(images));
+      return img;
+    };
 
-    const currency = extractCurrency($('.a-price-symbol'))
-    const discountRate = $('.savingsPercentage').text().replace(/[-%]/g, "");
+    const priceText =
+      getText('.a-price .a-offscreen') ||
+      getText('.a-price-whole') ||
+      getText('#priceblock_ourprice') ||
+      getText('#priceblock_dealprice');
 
-    const description = extractDescription($)
+    const price = priceText
+      ? Number(priceText.replace(/[₹,]/g, '').trim())
+      : null;
 
-    // Construct data object with scraped information
-    const data = {
-      url,
-      currency: currency || '$',
-      image: imageUrls[0],
-      title,
-      currentPrice: Number(currentPrice) || Number(originalPrice),
-      originalPrice: Number(originalPrice) || Number(currentPrice),
-      priceHistory: [],
-      discountRate: Number(discountRate),
-      category: 'category',
-      reviewsCount:100,
-      stars: 4.5,
-      isOutOfStock: outOfStock,
-      description,
-      lowestPrice: Number(currentPrice) || Number(originalPrice),
-      highestPrice: Number(originalPrice) || Number(currentPrice),
-      averagePrice: Number(currentPrice) || Number(originalPrice),
-    }
+    return {
+      title: getText('#productTitle'),
+      image: getImage(),
+      currentPrice: price,
+      currency: '₹',
+      category: 'product',
+    };
+  });
 
-    return data;
-  } catch (error: any) {
-    console.log(error);
-  }
+  await browser.close();
+
+  return {
+    url,
+    title: data.title,
+    image: data.image,
+    currentPrice: data.currentPrice,
+    originalPrice: data.currentPrice,
+    currency: data.currency,
+    category: data.category,
+    priceHistory: data.currentPrice
+      ? [{ price: data.currentPrice, date: new Date() }]
+      : [],
+    lowestPrice: data.currentPrice,
+    highestPrice: data.currentPrice,
+    averagePrice: data.currentPrice,
+    isOutOfStock: !data.currentPrice,
+    description: '',
+    reviewsCount: 0,
+    discountRate: 0,
+  };
 }

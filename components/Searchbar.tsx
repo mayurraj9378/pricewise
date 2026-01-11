@@ -1,72 +1,42 @@
-"use client"
+'use client';
 
-import { scrapeAndStoreProduct } from '@/lib/actions';
-import { FormEvent, useState } from 'react'
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { getProduct } from '@/lib/actions/getProduct';
 
-const isValidAmazonProductURL = (url: string) => {
-  try {
-    const parsedURL = new URL(url);
-    const hostname = parsedURL.hostname;
+export default function Searchbar() {
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-    if(
-      hostname.includes('amazon.com') || 
-      hostname.includes ('amazon.') || 
-      hostname.endsWith('amazon')
-    ) {
-      return true;
-    }
-  } catch (error) {
-    return false;
-  }
-
-  return false;
-}
-
-const Searchbar = () => {
-  const [searchPrompt, setSearchPrompt] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    const isValidLink = isValidAmazonProductURL(searchPrompt);
-
-    if(!isValidLink) return alert('Please provide a valid Amazon link')
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const match = url.match(/\/dp\/([A-Z0-9]{10})/);
+    if (!match) return alert('Invalid Amazon link');
 
     try {
-      setIsLoading(true);
-
-      // Scrape the product page
-      const product = await scrapeAndStoreProduct(searchPrompt);
-    } catch (error) {
-      console.log(error);
+      setLoading(true);
+      await getProduct(match[1]);
+      router.refresh();
+      setUrl('');
+    } catch {
+      alert('Failed to fetch product');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <form 
-      className="flex flex-wrap gap-4 mt-12" 
-      onSubmit={handleSubmit}
-    >
-      <input 
-        type="text"
-        value={searchPrompt}
-        onChange={(e) => setSearchPrompt(e.target.value)}
-        placeholder="Enter product link"
+    <form onSubmit={handleSubmit} className="flex gap-4 mt-6">
+      <input
+        value={url}
+        onChange={e => setUrl(e.target.value)}
+        placeholder="Paste Amazon product link"
         className="searchbar-input"
       />
-
-      <button 
-        type="submit" 
-        className="searchbar-btn"
-        disabled={searchPrompt === ''}
-      >
-        {isLoading ? 'Searching...' : 'Search'}
+      <button disabled={loading} className="searchbar-btn">
+        {loading ? 'Fetching…' : 'Search'}
       </button>
     </form>
-  )
+  );
 }
-
-export default Searchbar
