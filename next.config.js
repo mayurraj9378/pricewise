@@ -17,7 +17,7 @@ const nextConfig = {
       },
       {
         protocol: 'https',
-        hostname: '**.amazon.com',
+        hostname: 'images-eu.ssl-images-amazon.com',
       },
     ],
   },
