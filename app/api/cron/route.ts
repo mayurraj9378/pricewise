@@ -1,3 +1,5 @@
+// cron route build guard
+
 import { NextResponse } from "next/server";
 
 import {
