@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET() {
-  // ⛔ Skip execution during build, but KEEP TYPE SAFETY
+  // ⛔ Skip cron during build
   if (process.env.VERCEL_ENV !== "production") {
     return NextResponse.json({ message: "Cron skipped during build" });
   }
@@ -35,37 +35,26 @@ export async function GET() {
         const scraped = await scrapeAmazonProduct(currentProduct.url);
         if (!scraped) return currentProduct;
 
-        // ✅ FULL NORMALIZATION (TYPE SAFE)
-        const normalized = {
-          url: scraped.url,
-          title: scraped.title ?? "",
-          image: scraped.image ?? "",
-          currentPrice: scraped.currentPrice ?? 0,
-          originalPrice: scraped.originalPrice ?? 0,
-          currency: scraped.currency ?? "₹",
-          category: scraped.category ?? "",
-          priceHistory: currentProduct.priceHistory.concat({
-            price: scraped.currentPrice ?? 0,
-            date: new Date(),
-          }),
-          lowestPrice: getLowestPrice(currentProduct.priceHistory),
-          highestPrice: getHighestPrice(currentProduct.priceHistory),
-          averagePrice: getAveragePrice(currentProduct.priceHistory),
-          isOutOfStock: scraped.isOutOfStock ?? false,
-          description: scraped.description ?? "",
-          discountRate: scraped.discountRate ?? 0,
-          stars: scraped.stars ?? 0, // ⭐ REQUIRED
-        };
+        const priceHistory = currentProduct.priceHistory.concat({
+          price: scraped.currentPrice ?? 0,
+          date: new Date(),
+        });
 
         const updatedProduct = await Product.findOneAndUpdate(
-          { url: normalized.url },
-          normalized,
+          { url: scraped.url },
+          {
+            ...scraped,
+            priceHistory,
+            lowestPrice: getLowestPrice(priceHistory),
+            highestPrice: getHighestPrice(priceHistory),
+            averagePrice: getAveragePrice(priceHistory),
+          },
           { new: true }
         );
 
-        // ✅ CRITICAL FIX: NEVER pass `scraped`
+        // ✅ THIS IS NOW TYPE-SAFE
         const emailNotifType = getEmailNotifType(
-          normalized,
+          scraped,
           currentProduct
         );
 
