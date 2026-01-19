@@ -17,23 +17,30 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET() {
+  // ✅ IMPORTANT: Prevent DB connection during BUILD time
+  if (process.env.VERCEL_ENV !== "production") {
+    return NextResponse.json({
+      message: "Cron route skipped during build",
+    });
+  }
+
   try {
-    // 1️⃣ Connect to MongoDB
+    // 1️⃣ Connect to MongoDB (ONLY in production runtime)
     await connectDB();
 
-    // 2️⃣ Fetch all products
+    // 2️⃣ Fetch products
     const products = await Product.find({});
     if (!products.length) {
       return NextResponse.json({ message: "No products found" });
     }
 
-    // 3️⃣ Process each product
+    // 3️⃣ Update products
     const updatedProducts = await Promise.all(
       products.map(async (currentProduct) => {
         const scrapedProduct = await scrapeAmazonProduct(currentProduct.url);
         if (!scrapedProduct) return currentProduct;
 
-        // ✅ NORMALIZE ONCE (THIS IS THE FIX)
+        // ✅ NORMALIZE scraped data (STRICT TS SAFE)
         const normalizedScrapedProduct = {
           ...scrapedProduct,
           title: scrapedProduct.title ?? "",
@@ -55,7 +62,7 @@ export async function GET() {
           },
         ];
 
-        // Build final product object
+        // Prepare product update
         const productData = {
           ...normalizedScrapedProduct,
           priceHistory: updatedPriceHistory,
@@ -71,13 +78,12 @@ export async function GET() {
           { new: true }
         );
 
-        // ❗ THIS LINE WAS THE BUG (NOW FIXED)
+        // Email notification logic
         const emailNotifType = getEmailNotifType(
           normalizedScrapedProduct,
           currentProduct
         );
 
-        // Send email if required
         if (emailNotifType && updatedProduct?.users?.length > 0) {
           const emailContent = await generateEmailBody(
             {
@@ -99,7 +105,7 @@ export async function GET() {
     );
 
     return NextResponse.json({
-      message: "Cron job executed successfully",
+      message: "Cron executed successfully",
       data: updatedProducts,
     });
   } catch (error: any) {
