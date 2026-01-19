@@ -1,96 +1,92 @@
-import { PriceHistoryItem, Product } from "@/types";
+import { PriceHistoryItem } from "@/types";
 
-const Notification = {
+/* -------------------------------------------------------
+   NOTIFICATION TYPES (STRICT & SAFE)
+------------------------------------------------------- */
+
+export const Notification = {
   WELCOME: "WELCOME",
   CHANGE_OF_STOCK: "CHANGE_OF_STOCK",
   LOWEST_PRICE: "LOWEST_PRICE",
   THRESHOLD_MET: "THRESHOLD_MET",
-};
+} as const;
+
+export type NotificationType =
+  (typeof Notification)[keyof typeof Notification];
 
 const THRESHOLD_PERCENTAGE = 40;
 
-export function extractPrice(...elements: any) {
-  for (const element of elements) {
-    const priceText = element.text().trim();
-    if (priceText) {
-      const cleanPrice = priceText.replace(/[^\d.]/g, "");
-      const firstPrice = cleanPrice.match(/\d+\.\d{2}/)?.[0];
-      return firstPrice || cleanPrice;
-    }
-  }
-  return "";
-}
+/* -------------------------------------------------------
+   HELPER TYPES (LOCAL, NOT DB MODEL)
+------------------------------------------------------- */
 
-export function extractCurrency(element: any) {
-  const currencyText = element.text().trim().slice(0, 1);
-  return currencyText || "";
-}
+export type PriceCheckProduct = {
+  currentPrice: number;
+  isOutOfStock: boolean;
+  discountRate: number;
+  priceHistory: PriceHistoryItem[];
+};
 
-export function extractDescription($: any) {
-  const selectors = [
-    ".a-unordered-list .a-list-item",
-    ".a-expander-content p",
-  ];
-
-  for (const selector of selectors) {
-    const elements = $(selector);
-    if (elements.length > 0) {
-      return elements
-        .map((_: any, el: any) => $(el).text().trim())
-        .get()
-        .join("\n");
-    }
-  }
-  return "";
-}
+/* -------------------------------------------------------
+   PRICE HELPERS
+------------------------------------------------------- */
 
 export function getHighestPrice(priceList: PriceHistoryItem[]) {
-  return Math.max(...priceList.map((p) => p.price));
+  if (!priceList.length) return 0;
+
+  let highest = priceList[0].price;
+  for (const item of priceList) {
+    if (item.price > highest) highest = item.price;
+  }
+  return highest;
 }
 
 export function getLowestPrice(priceList: PriceHistoryItem[]) {
-  return Math.min(...priceList.map((p) => p.price));
+  if (!priceList.length) return 0;
+
+  let lowest = priceList[0].price;
+  for (const item of priceList) {
+    if (item.price < lowest) lowest = item.price;
+  }
+  return lowest;
 }
 
 export function getAveragePrice(priceList: PriceHistoryItem[]) {
   if (!priceList.length) return 0;
+
   const sum = priceList.reduce((acc, curr) => acc + curr.price, 0);
-  return sum / priceList.length;
+  return Math.round(sum / priceList.length);
 }
 
-/**
- * ✅ FINAL FIX:
- * scrapedProduct is NOT a full Product
- */
+/* -------------------------------------------------------
+   EMAIL NOTIFICATION LOGIC (CORE FIX)
+------------------------------------------------------- */
+
 export const getEmailNotifType = (
-  scrapedProduct: Partial<Product>,
-  currentProduct: Product
-) => {
-  const lowestPrice = getLowestPrice(currentProduct.priceHistory);
+  scraped: PriceCheckProduct,
+  current: PriceCheckProduct
+): NotificationType | null => {
 
-  if (
-    typeof scrapedProduct.currentPrice === "number" &&
-    scrapedProduct.currentPrice < lowestPrice
-  ) {
-    return Notification.LOWEST_PRICE as keyof typeof Notification;
+  const lowestPrice = getLowestPrice(current.priceHistory);
+
+  if (scraped.currentPrice < lowestPrice) {
+    return Notification.LOWEST_PRICE;
   }
 
-  if (
-    scrapedProduct.isOutOfStock === false &&
-    currentProduct.isOutOfStock === true
-  ) {
-    return Notification.CHANGE_OF_STOCK as keyof typeof Notification;
+  if (!scraped.isOutOfStock && current.isOutOfStock) {
+    return Notification.CHANGE_OF_STOCK;
   }
 
-  if (
-    typeof scrapedProduct.discountRate === "number" &&
-    scrapedProduct.discountRate >= THRESHOLD_PERCENTAGE
-  ) {
-    return Notification.THRESHOLD_MET as keyof typeof Notification;
+  if (scraped.discountRate >= THRESHOLD_PERCENTAGE) {
+    return Notification.THRESHOLD_MET;
   }
 
   return null;
 };
+
+/* -------------------------------------------------------
+   FORMATTERS
+------------------------------------------------------- */
 
 export const formatNumber = (num: number = 0) => {
   return num.toLocaleString(undefined, {
