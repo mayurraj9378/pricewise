@@ -11,7 +11,7 @@ export default async function Home() {
       <div className="flex flex-wrap gap-x-8 gap-y-16">
         {allProducts?.map((product) => (
           <ProductCard
-            key={String(product._id)}   // ✅ FINAL FIX
+            key={String(product._id)}
             product={product}
           />
         ))}
