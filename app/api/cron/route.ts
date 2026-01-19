@@ -1,5 +1,3 @@
-// cron route build guard
-
 import { NextResponse } from "next/server";
 
 import {
@@ -19,74 +17,59 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET() {
-  // ✅ IMPORTANT: Prevent DB connection during BUILD time
+  // ⛔ Skip execution during build, but KEEP TYPE SAFETY
   if (process.env.VERCEL_ENV !== "production") {
-    return NextResponse.json({
-      message: "Cron route skipped during build",
-    });
+    return NextResponse.json({ message: "Cron skipped during build" });
   }
 
   try {
-    // 1️⃣ Connect to MongoDB (ONLY in production runtime)
     await connectDB();
 
-    // 2️⃣ Fetch products
     const products = await Product.find({});
     if (!products.length) {
       return NextResponse.json({ message: "No products found" });
     }
 
-    // 3️⃣ Update products
     const updatedProducts = await Promise.all(
       products.map(async (currentProduct) => {
-        const scrapedProduct = await scrapeAmazonProduct(currentProduct.url);
-        if (!scrapedProduct) return currentProduct;
+        const scraped = await scrapeAmazonProduct(currentProduct.url);
+        if (!scraped) return currentProduct;
 
-        // ✅ NORMALIZE scraped data (STRICT TS SAFE)
-        const normalizedScrapedProduct = {
-          ...scrapedProduct,
-          title: scrapedProduct.title ?? "",
-          image: scrapedProduct.image ?? "",
-          currency: scrapedProduct.currency ?? "₹",
-          category: scrapedProduct.category ?? "",
-          currentPrice: scrapedProduct.currentPrice ?? 0,
-          originalPrice: scrapedProduct.originalPrice ?? 0,
-          discountRate: scrapedProduct.discountRate ?? 0,
-          stars: scrapedProduct.stars ?? 0,
-        };
-
-        // Update price history
-        const updatedPriceHistory = [
-          ...currentProduct.priceHistory,
-          {
-            price: normalizedScrapedProduct.currentPrice,
+        // ✅ FULL NORMALIZATION (TYPE SAFE)
+        const normalized = {
+          url: scraped.url,
+          title: scraped.title ?? "",
+          image: scraped.image ?? "",
+          currentPrice: scraped.currentPrice ?? 0,
+          originalPrice: scraped.originalPrice ?? 0,
+          currency: scraped.currency ?? "₹",
+          category: scraped.category ?? "",
+          priceHistory: currentProduct.priceHistory.concat({
+            price: scraped.currentPrice ?? 0,
             date: new Date(),
-          },
-        ];
-
-        // Prepare product update
-        const productData = {
-          ...normalizedScrapedProduct,
-          priceHistory: updatedPriceHistory,
-          lowestPrice: getLowestPrice(updatedPriceHistory),
-          highestPrice: getHighestPrice(updatedPriceHistory),
-          averagePrice: getAveragePrice(updatedPriceHistory),
+          }),
+          lowestPrice: getLowestPrice(currentProduct.priceHistory),
+          highestPrice: getHighestPrice(currentProduct.priceHistory),
+          averagePrice: getAveragePrice(currentProduct.priceHistory),
+          isOutOfStock: scraped.isOutOfStock ?? false,
+          description: scraped.description ?? "",
+          discountRate: scraped.discountRate ?? 0,
+          stars: scraped.stars ?? 0, // ⭐ REQUIRED
         };
 
-        // Update DB
         const updatedProduct = await Product.findOneAndUpdate(
-          { url: productData.url },
-          productData,
+          { url: normalized.url },
+          normalized,
           { new: true }
         );
 
-        // Email notification logic
+        // ✅ CRITICAL FIX: NEVER pass `scraped`
         const emailNotifType = getEmailNotifType(
-          normalizedScrapedProduct,
+          normalized,
           currentProduct
         );
 
-        if (emailNotifType && updatedProduct?.users?.length > 0) {
+        if (emailNotifType && updatedProduct?.users?.length) {
           const emailContent = await generateEmailBody(
             {
               title: updatedProduct.title,
@@ -95,11 +78,11 @@ export async function GET() {
             emailNotifType
           );
 
-          const userEmails = updatedProduct.users.map(
-            (user: any) => user.email
+          const emails = updatedProduct.users.map(
+            (u: any) => u.email
           );
 
-          await sendEmail(emailContent, userEmails);
+          await sendEmail(emailContent, emails);
         }
 
         return updatedProduct;
