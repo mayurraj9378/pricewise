@@ -1,19 +1,18 @@
-import { Product } from '@/types';
 import Image from 'next/image';
 import Link from 'next/link';
 
 interface Props {
-  product: Product;
+  product: any; // ✅ Accept serialized / mongoose product safely
 }
 
 const ProductCard = ({ product }: Props) => {
   const imageSrc =
-    product.image && product.image.startsWith('http')
+    typeof product.image === 'string' && product.image.startsWith('http')
       ? product.image
       : '/assets/images/placeholder.png';
 
   return (
-    <Link href={`/products/${product._id}`} className="product-card">
+    <Link href={`/products/${product._id?.toString()}`} className="product-card">
       <div className="product-card_img-container">
         <Image
           src={imageSrc}
