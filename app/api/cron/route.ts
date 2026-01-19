@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-
 import {
   getLowestPrice,
   getHighestPrice,
@@ -17,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET() {
-  // ⛔ Skip cron during build
+  // ⛔ Skip during build
   if (process.env.VERCEL_ENV !== "production") {
     return NextResponse.json({ message: "Cron skipped during build" });
   }
@@ -35,27 +34,37 @@ export async function GET() {
         const scraped = await scrapeAmazonProduct(currentProduct.url);
         if (!scraped) return currentProduct;
 
-        const priceHistory = currentProduct.priceHistory.concat({
-          price: scraped.currentPrice ?? 0,
+        const updatedPriceHistory = currentProduct.priceHistory.concat({
+          price: scraped.currentPrice ?? currentProduct.currentPrice,
           date: new Date(),
         });
 
         const updatedProduct = await Product.findOneAndUpdate(
-          { url: scraped.url },
+          { url: currentProduct.url },
           {
             ...scraped,
-            priceHistory,
-            lowestPrice: getLowestPrice(priceHistory),
-            highestPrice: getHighestPrice(priceHistory),
-            averagePrice: getAveragePrice(priceHistory),
+            priceHistory: updatedPriceHistory,
+            lowestPrice: getLowestPrice(updatedPriceHistory),
+            highestPrice: getHighestPrice(updatedPriceHistory),
+            averagePrice: getAveragePrice(updatedPriceHistory),
           },
           { new: true }
         );
 
-        // ✅ THIS IS NOW TYPE-SAFE
+        // ✅ PASS ONLY REQUIRED FIELDS
         const emailNotifType = getEmailNotifType(
-          scraped,
-          currentProduct
+          {
+            currentPrice: scraped.currentPrice ?? 0,
+            isOutOfStock: scraped.isOutOfStock ?? false,
+            discountRate: scraped.discountRate ?? 0,
+            priceHistory: updatedPriceHistory,
+          },
+          {
+            currentPrice: currentProduct.currentPrice,
+            isOutOfStock: currentProduct.isOutOfStock,
+            discountRate: currentProduct.discountRate,
+            priceHistory: currentProduct.priceHistory,
+          }
         );
 
         if (emailNotifType && updatedProduct?.users?.length) {
@@ -67,11 +76,10 @@ export async function GET() {
             emailNotifType
           );
 
-          const emails = updatedProduct.users.map(
-            (u: any) => u.email
+          await sendEmail(
+            emailContent,
+            updatedProduct.users.map((u: any) => u.email)
           );
-
-          await sendEmail(emailContent, emails);
         }
 
         return updatedProduct;
