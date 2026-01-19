@@ -1,39 +1,21 @@
-import { notFound } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
-import { connectDB } from "@/lib/mongoose";
-import Product from "@/lib/models/product.model";
+import { getAllProducts } from "@/lib/actions";
 
-interface PageProps {
-  params: {
-    id: string;
-  };
-}
-
-async function getProductById(id: string) {
-  await connectDB();
-  return Product.findById(id);
-}
-
-export default async function ProductPage({ params }: PageProps) {
-  const { id } = params;
-
-  // 1️⃣ Fetch product
-  const product = await getProductById(id);
-
-  // 2️⃣ Handle null (FIX 1)
-  if (!product) {
-    notFound();
-  }
-
-  // 3️⃣ Convert Mongoose document → plain JS object (FIX 3)
-  const plainProduct = JSON.parse(JSON.stringify(product));
+export default async function Home() {
+  const allProducts = await getAllProducts();
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <ProductCard
-        key={plainProduct._id.toString()} // FIX 2
-        product={plainProduct}
-      />
-    </div>
+    <section className="px-6 py-10">
+      <h2 className="text-2xl font-semibold mb-8">All Products</h2>
+
+      <div className="flex flex-wrap gap-x-8 gap-y-16">
+        {allProducts?.map((product) => (
+          <ProductCard
+            key={product._id?.toString()} // ✅ FIXED
+            product={product}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
